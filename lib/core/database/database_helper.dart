@@ -27,7 +27,7 @@ class DatabaseHelper {
 
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: _onOpen,
@@ -60,6 +60,36 @@ class DatabaseHelper {
           FOREIGN KEY (cita_id) REFERENCES appointments (id) ON DELETE CASCADE
         )
       ''');
+    }
+    // v3 → v4: tabla machines, maquina_id en appointments, checklist en mantenimientos
+    if (oldVersion < 4) {
+      // Nueva tabla de máquinas / instalaciones vinculadas a clientes
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS machines (
+          id                INTEGER PRIMARY KEY AUTOINCREMENT,
+          cliente_id        INTEGER NOT NULL,
+          nombre_referencia TEXT    NOT NULL,
+          tipo_puerta       TEXT    NOT NULL DEFAULT '',
+          fabricante        TEXT    NOT NULL DEFAULT '',
+          modelo            TEXT    NOT NULL DEFAULT '',
+          serie             TEXT    NOT NULL DEFAULT '',
+          FOREIGN KEY (cliente_id) REFERENCES clients (id) ON DELETE CASCADE
+        )
+      ''');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_machines_cliente ON machines (cliente_id)',
+      );
+      // FK soft: SQLite no permite FK via ALTER TABLE, la columna es nullable
+      await db.execute(
+        'ALTER TABLE appointments ADD COLUMN maquina_id INTEGER',
+      );
+      // Nuevas columnas en mantenimientos (DEFAULT vacío para registros anteriores)
+      await db.execute(
+        "ALTER TABLE mantenimientos ADD COLUMN estado_instalacion TEXT DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE mantenimientos ADD COLUMN checklist_json TEXT DEFAULT '{}'",
+      );
     }
   }
 
@@ -102,6 +132,7 @@ class DatabaseHelper {
         estado              TEXT    NOT NULL DEFAULT 'Pendiente',
         recurrencia_activa  INTEGER NOT NULL DEFAULT 1,
         es_guardia          INTEGER NOT NULL DEFAULT 0,
+        maquina_id          INTEGER,
         FOREIGN KEY (cliente_id) REFERENCES clients (id) ON DELETE CASCADE
       )
     ''');
@@ -152,15 +183,33 @@ class DatabaseHelper {
     // firma_tecnico / firma_cliente: imágenes PNG codificadas en Base64.
     await db.execute('''
       CREATE TABLE mantenimientos (
-        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-        cita_id          INTEGER NOT NULL,
-        operario_nombre  TEXT    NOT NULL,
-        detalles_trabajo TEXT    NOT NULL,
-        observaciones    TEXT    NOT NULL DEFAULT '',
-        firma_tecnico    TEXT,
-        firma_cliente    TEXT,
-        fecha_creacion   TEXT    NOT NULL,
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        cita_id             INTEGER NOT NULL,
+        operario_nombre     TEXT    NOT NULL,
+        detalles_trabajo    TEXT    NOT NULL,
+        observaciones       TEXT    NOT NULL DEFAULT '',
+        firma_tecnico       TEXT,
+        firma_cliente       TEXT,
+        fecha_creacion      TEXT    NOT NULL,
+        estado_instalacion  TEXT    NOT NULL DEFAULT '',
+        checklist_json      TEXT    NOT NULL DEFAULT '{}',
         FOREIGN KEY (cita_id) REFERENCES appointments (id) ON DELETE CASCADE
+      )
+    ''');
+
+    // ── Máquinas / Instalaciones ───────────────────────────────────────────────
+    // Entidades físicas (puertas, barreras, etc.) vinculadas a un cliente.
+    // Se asocian opcionalmente a las citas para pre-rellenar partes.
+    await db.execute('''
+      CREATE TABLE machines (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        cliente_id        INTEGER NOT NULL,
+        nombre_referencia TEXT    NOT NULL,
+        tipo_puerta       TEXT    NOT NULL DEFAULT '',
+        fabricante        TEXT    NOT NULL DEFAULT '',
+        modelo            TEXT    NOT NULL DEFAULT '',
+        serie             TEXT    NOT NULL DEFAULT '',
+        FOREIGN KEY (cliente_id) REFERENCES clients (id) ON DELETE CASCADE
       )
     ''');
 
@@ -175,6 +224,10 @@ class DatabaseHelper {
     // Acelera obtener las fichas de una cita concreta.
     await db.execute(
       'CREATE INDEX idx_records_cita ON maintenance_records (cita_id)',
+    );
+    // Acelera obtener las máquinas de un cliente.
+    await db.execute(
+      'CREATE INDEX idx_machines_cliente ON machines (cliente_id)',
     );
   }
 

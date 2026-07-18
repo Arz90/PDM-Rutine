@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../../clients/models/client.dart';
 import '../../clients/providers/proveedor_clientes.dart';
+import '../../machines/models/maquina.dart';
+import '../../machines/providers/proveedor_maquinas.dart';
 import '../models/appointment.dart';
 import '../providers/proveedor_citas.dart';
 
@@ -53,6 +55,7 @@ class _EstadoFormularioCita extends ConsumerState<PantallaFormularioCita> {
 
   // ── Estado del formulario ─────────────────────────────────────────────────
   Client? _clienteSeleccionado;
+  Maquina? _maquinaSeleccionada;
   late DateTime _fechaSeleccionada;
   late TimeOfDay _horaSeleccionada;
   final TextEditingController _ctrlIdentificacion = TextEditingController();
@@ -120,6 +123,31 @@ class _EstadoFormularioCita extends ConsumerState<PantallaFormularioCita> {
     }
   }
 
+  // ── Creación rápida de máquina ────────────────────────────────────────────
+
+  /// Abre [_DialogoNuevaMaquina] y espera la [Maquina] creada.
+  Future<void> _abrirDialogoCreacionRapidaMaquina() async {
+    if (_clienteSeleccionado == null) return;
+    debugPrint('[FormularioCita] Abriendo diálogo de creación rápida de máquina.');
+
+    final nuevaMaquina = await showDialog<Maquina>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DialogoNuevaMaquina(clienteId: _clienteSeleccionado!.id!),
+    );
+
+    if (nuevaMaquina == null || !mounted) return;
+
+    debugPrint(
+        '[FormularioCita] ✓ Máquina recibida: "${nuevaMaquina.nombreReferencia}" (id=${nuevaMaquina.id})');
+
+    ref
+        .read(gestorMaquinasProvider(_clienteSeleccionado!.id!).notifier)
+        .agregarMaquinaLocalmente(nuevaMaquina);
+
+    setState(() => _maquinaSeleccionada = nuevaMaquina);
+  }
+
   // ── Creación rápida de cliente ────────────────────────────────────────────
 
   /// Abre [_DialogoNuevoCliente] y espera el [Client] creado.
@@ -175,13 +203,17 @@ class _EstadoFormularioCita extends ConsumerState<PantallaFormularioCita> {
       final gestor = ref.read(gestorCitasProvider.notifier);
 
       if (_esEdicion) {
-        final citaActualizada = widget.citaExistente!.copyWith(
+        // Construimos el objeto completo para poder asignar/limpiar maquinaId
+        final citaActualizada = Appointment(
+          id: widget.citaExistente!.id,
           clienteId: _clienteSeleccionado!.id!,
           fechaHora: fechaHoraCombinada,
           identificacion: _ctrlIdentificacion.text.trim(),
           periodicidad: _periodicidadSeleccionada,
           estado: _estadoSeleccionado,
           esGuardia: _esGuardia,
+          recurrenciaActiva: widget.citaExistente!.recurrenciaActiva,
+          maquinaId: _maquinaSeleccionada?.id,
         );
         debugPrint('[FormularioCita] Datos a actualizar: ${citaActualizada.toMap()}');
         await gestor.modificarCita(citaActualizada);
@@ -193,6 +225,7 @@ class _EstadoFormularioCita extends ConsumerState<PantallaFormularioCita> {
           periodicidad: _periodicidadSeleccionada,
           estado: _estadoSeleccionado,
           esGuardia: _esGuardia,
+          maquinaId: _maquinaSeleccionada?.id,
           // recurrenciaActiva: true por defecto (se gestiona desde el detalle)
         );
         debugPrint('[FormularioCita] Datos a insertar: ${nuevaCita.toMap()}');
@@ -285,8 +318,10 @@ class _EstadoFormularioCita extends ConsumerState<PantallaFormularioCita> {
                                   child: Text(c.nombre),
                                 ))
                             .toList(),
-                        onChanged: (c) =>
-                            setState(() => _clienteSeleccionado = c),
+                        onChanged: (c) => setState(() {
+                          _clienteSeleccionado = c;
+                          _maquinaSeleccionada = null; // reset al cambiar cliente
+                        }),
                         validator: (valor) =>
                             valor == null ? 'Selecciona un cliente.' : null,
                       ),
@@ -304,6 +339,74 @@ class _EstadoFormularioCita extends ConsumerState<PantallaFormularioCita> {
                 );
               },
             ),
+
+            const SizedBox(height: 24),
+
+            // ── Sección: Máquina / Instalación (opcional) ───────────────────
+            _SeccionFormulario(titulo: 'Máquina / Instalación (opcional)'),
+            const SizedBox(height: 8),
+            if (_clienteSeleccionado == null)
+              Text(
+                'Selecciona primero un cliente para ver sus instalaciones.',
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
+                    fontSize: 13),
+              )
+            else
+              ref.watch(gestorMaquinasProvider(_clienteSeleccionado!.id!)).when(
+                    loading: () => const LinearProgressIndicator(),
+                    error: (e, _) => Text('Error al cargar máquinas: $e',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error)),
+                    data: (maquinas) {
+                      // Pre-selección en modo edición
+                      if (_esEdicion &&
+                          _maquinaSeleccionada == null &&
+                          widget.citaExistente!.maquinaId != null) {
+                        _maquinaSeleccionada = maquinas
+                            .where(
+                                (m) => m.id == widget.citaExistente!.maquinaId)
+                            .firstOrNull;
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<Maquina?>(
+                              // ignore: deprecated_member_use
+                              value: _maquinaSeleccionada,
+                              decoration: const InputDecoration(
+                                labelText: 'Instalación',
+                                prefixIcon:
+                                    Icon(Icons.settings_outlined),
+                              ),
+                              hint: const Text('Sin instalación asignada'),
+                              items: [
+                                const DropdownMenuItem<Maquina?>(
+                                  value: null,
+                                  child: Text('— Ninguna —'),
+                                ),
+                                ...maquinas.map((m) => DropdownMenuItem(
+                                      value: m,
+                                      child: Text(m.nombreReferencia),
+                                    )),
+                              ],
+                              onChanged: (m) =>
+                                  setState(() => _maquinaSeleccionada = m),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Tooltip(
+                            message: 'Crear instalación rápida',
+                            child: IconButton.outlined(
+                              onPressed: _abrirDialogoCreacionRapidaMaquina,
+                              icon: const Icon(Icons.add_circle_outline),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
 
             const SizedBox(height: 24),
 
@@ -510,6 +613,169 @@ class _BotonSelector extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Diálogo independiente para crear máquina rápida ───────────────────────────
+
+/// Diálogo para crear una nueva instalación/máquina vinculada a un cliente.
+///
+/// Sigue el mismo patrón seguro que [_DialogoNuevoCliente]:
+/// cierra primero el diálogo y devuelve la [Maquina] al padre,
+/// evitando accesos a context/ref tras el await.
+class _DialogoNuevaMaquina extends ConsumerStatefulWidget {
+  final int clienteId;
+
+  const _DialogoNuevaMaquina({required this.clienteId});
+
+  @override
+  ConsumerState<_DialogoNuevaMaquina> createState() =>
+      _EstadoDialogoNuevaMaquina();
+}
+
+class _EstadoDialogoNuevaMaquina
+    extends ConsumerState<_DialogoNuevaMaquina> {
+  final _claveFormulario = GlobalKey<FormState>();
+  final _ctrlNombre = TextEditingController();
+  final _ctrlTipo = TextEditingController();
+  final _ctrlFabricante = TextEditingController();
+  final _ctrlModelo = TextEditingController();
+  final _ctrlSerie = TextEditingController();
+  bool _guardando = false;
+
+  @override
+  void dispose() {
+    _ctrlNombre.dispose();
+    _ctrlTipo.dispose();
+    _ctrlFabricante.dispose();
+    _ctrlModelo.dispose();
+    _ctrlSerie.dispose();
+    super.dispose();
+  }
+
+  Future<void> _guardar() async {
+    if (!(_claveFormulario.currentState?.validate() ?? false)) return;
+
+    setState(() => _guardando = true);
+    debugPrint('[DialogoNuevaMaquina] Guardando máquina rápida...');
+
+    final repositorio = ref.read(repositorioMaquinasProvider);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final colorError = Theme.of(context).colorScheme.error;
+
+    try {
+      final nuevaMaquina = Maquina(
+        clienteId: widget.clienteId,
+        nombreReferencia: _ctrlNombre.text.trim(),
+        tipoPuerta: _ctrlTipo.text.trim(),
+        fabricante: _ctrlFabricante.text.trim(),
+        modelo: _ctrlModelo.text.trim(),
+        serie: _ctrlSerie.text.trim(),
+      );
+      final nuevoId = await repositorio.insertarMaquina(nuevaMaquina);
+      final maquinaConId = nuevaMaquina.copyWith(id: nuevoId);
+      debugPrint('[DialogoNuevaMaquina] ✓ Máquina creada con id=$nuevoId');
+
+      if (!mounted) return;
+      navigator.pop(maquinaConId); // CIERRA PRIMERO, devuelve al padre
+    } catch (e, traza) {
+      debugPrint('[DialogoNuevaMaquina] ✗ ERROR: $e\n$traza');
+      if (!mounted) return;
+      setState(() => _guardando = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error al crear la instalación: $e'),
+          backgroundColor: colorError,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Nueva instalación'),
+      content: Form(
+        key: _claveFormulario,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _ctrlNombre,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre / Referencia *',
+                  hintText: 'Ej: Barrera de acceso nave 3',
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'El nombre es obligatorio.'
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _ctrlTipo,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo de puerta',
+                  hintText: 'Ej: Seccional, Basculante, Barrera',
+                  prefixIcon: Icon(Icons.door_sliding_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _ctrlFabricante,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Fabricante',
+                  prefixIcon: Icon(Icons.factory_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _ctrlModelo,
+                decoration: const InputDecoration(
+                  labelText: 'Modelo',
+                  prefixIcon: Icon(Icons.inventory_2_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _ctrlSerie,
+                decoration: const InputDecoration(
+                  labelText: 'Número de serie',
+                  prefixIcon: Icon(Icons.qr_code_outlined),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _guardando
+              ? null
+              : () {
+                  debugPrint('[DialogoNuevaMaquina] Cancelado por el usuario.');
+                  Navigator.of(context).pop();
+                },
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _guardando ? null : _guardar,
+          child: _guardando
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('Guardar'),
+        ),
+      ],
     );
   }
 }

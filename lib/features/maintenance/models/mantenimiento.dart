@@ -26,6 +26,13 @@ class Mantenimiento {
   /// Fecha y hora de creación del parte (hora local del dispositivo).
   final DateTime fechaCreacion;
 
+  /// Resultado global de la inspección: "Favorable" | "Favorable con observaciones" | "Desfavorable".
+  final String estadoInstalacion;
+
+  /// Checklist de inspección serializado como JSON.
+  /// Estructura: `Map<categoría, Map<ítem, valor>>` donde valor ∈ {Favorable, Desfavorable, N/A}.
+  final String checklistJson;
+
   const Mantenimiento({
     this.id,
     required this.citaId,
@@ -35,6 +42,8 @@ class Mantenimiento {
     this.firmaTecnico,
     this.firmaCliente,
     required this.fechaCreacion,
+    this.estadoInstalacion = '',
+    this.checklistJson = '{}',
   });
 
   // ── SQLite ──────────────────────────────────────────────────────────────────
@@ -49,6 +58,8 @@ class Mantenimiento {
       'firma_tecnico': firmaTecnico,
       'firma_cliente': firmaCliente,
       'fecha_creacion': fechaCreacion.toUtc().toIso8601String(),
+      'estado_instalacion': estadoInstalacion,
+      'checklist_json': checklistJson,
     };
   }
 
@@ -63,6 +74,8 @@ class Mantenimiento {
       firmaCliente: map['firma_cliente'] as String?,
       fechaCreacion:
           DateTime.parse(map['fecha_creacion'] as String).toLocal(),
+      estadoInstalacion: map['estado_instalacion'] as String? ?? '',
+      checklistJson: map['checklist_json'] as String? ?? '{}',
     );
   }
 
@@ -77,6 +90,8 @@ class Mantenimiento {
     String? firmaTecnico,
     String? firmaCliente,
     DateTime? fechaCreacion,
+    String? estadoInstalacion,
+    String? checklistJson,
   }) {
     return Mantenimiento(
       id: id ?? this.id,
@@ -87,6 +102,8 @@ class Mantenimiento {
       firmaTecnico: firmaTecnico ?? this.firmaTecnico,
       firmaCliente: firmaCliente ?? this.firmaCliente,
       fechaCreacion: fechaCreacion ?? this.fechaCreacion,
+      estadoInstalacion: estadoInstalacion ?? this.estadoInstalacion,
+      checklistJson: checklistJson ?? this.checklistJson,
     );
   }
 

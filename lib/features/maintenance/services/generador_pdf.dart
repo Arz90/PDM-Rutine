@@ -7,9 +7,10 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../../calendar/models/appointment.dart';
+import '../../machines/models/maquina.dart';
 import '../models/mantenimiento.dart';
 
-/// Servicio estático que genera un PDF en formato A4 a partir de un [Mantenimiento]
+/// Servicio estático que genera un PDF A4 a partir de un [Mantenimiento]
 /// y lo abre en el menú nativo de compartir del dispositivo.
 class GeneradorPDF {
   GeneradorPDF._(); // No instanciable
@@ -19,6 +20,9 @@ class GeneradorPDF {
   static const _colorSubcabecera = PdfColor.fromInt(0xFF283593);
   static const _colorFondoFila = PdfColor.fromInt(0xFFE8EAF6);
   static const _colorTextoSec = PdfColor.fromInt(0xFF37474F);
+  static const _colorVerde = PdfColor.fromInt(0xFF2E7D32);
+  static const _colorNaranja = PdfColor.fromInt(0xFFE65100);
+  static const _colorRojo = PdfColor.fromInt(0xFFC62828);
 
   /// Genera el documento PDF y abre el menú de compartir de Android/iOS.
   static Future<void> generarYCompartir({
@@ -26,13 +30,12 @@ class GeneradorPDF {
     required Appointment cita,
     required String nombreCliente,
     required String ciudadCliente,
+    Maquina? maquina,
   }) async {
     debugPrint('[GeneradorPDF] Iniciando generación del PDF...');
 
-    final formatoFechaHora =
-        DateFormat('dd/MM/yyyy  HH:mm', 'es_ES');
-    final fechaCitaTexto =
-        formatoFechaHora.format(cita.fechaHora);
+    final formatoFechaHora = DateFormat('dd/MM/yyyy  HH:mm', 'es_ES');
+    final fechaCitaTexto = formatoFechaHora.format(cita.fechaHora);
     final fechaParteTexto =
         formatoFechaHora.format(mantenimiento.fechaCreacion);
 
@@ -49,77 +52,125 @@ class GeneradorPDF {
           pw.MemoryImage(base64Decode(mantenimiento.firmaCliente!));
     }
 
+    // Decodificar checklist desde JSON
+    Map<String, Map<String, String>> checklist = {};
+    if (mantenimiento.checklistJson.isNotEmpty &&
+        mantenimiento.checklistJson != '{}') {
+      try {
+        final decoded =
+            jsonDecode(mantenimiento.checklistJson) as Map<String, dynamic>;
+        checklist = decoded.map((cat, items) => MapEntry(
+              cat,
+              (items as Map<String, dynamic>).cast<String, String>(),
+            ));
+      } catch (e) {
+        debugPrint('[GeneradorPDF] ⚠ Error al decodificar checklistJson: $e');
+      }
+    }
+
     final doc = pw.Document(
       title: 'Parte de Mantenimiento',
       author: mantenimiento.operarioNombre,
     );
 
+    // MultiPage para manejar el desbordamiento de contenido
     doc.addPage(
-      pw.Page(
+      pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.symmetric(horizontal: 36, vertical: 32),
-        build: (ctx) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            // ── Cabecera ──────────────────────────────────────────────────────
-            _construirCabecera(fechaParteTexto),
-            pw.SizedBox(height: 18),
+        build: (ctx) => [
+          // ── Cabecera ────────────────────────────────────────────────────────
+          _construirCabecera(fechaParteTexto),
+          pw.SizedBox(height: 18),
 
-            // ── Datos del cliente e instalación ───────────────────────────────
-            _construirTituloSeccion('DATOS DEL CLIENTE / INSTALACIÓN'),
+          // ── Datos del cliente / instalación ─────────────────────────────────
+          _construirTituloSeccion('DATOS DEL CLIENTE / INSTALACIÓN'),
+          pw.SizedBox(height: 6),
+          _construirTabla([
+            ['Cliente', nombreCliente],
+            ['Ciudad / C.P.', ciudadCliente],
+            ['Referencia de cita', cita.identificacion],
+            ['Fecha de la visita', fechaCitaTexto],
+            ['Periodicidad', cita.periodicidad],
+            ['Operario', mantenimiento.operarioNombre],
+          ]),
+
+          // ── Datos de la máquina (si existe) ──────────────────────────────
+          if (maquina != null) ...[
+            pw.SizedBox(height: 14),
+            _construirTituloSeccion('MÁQUINA / INSTALACIÓN'),
             pw.SizedBox(height: 6),
             _construirTabla([
-              ['Cliente', nombreCliente],
-              ['Ciudad / C.P.', ciudadCliente],
-              ['Instalación / Referencia', cita.identificacion],
-              ['Fecha de la visita', fechaCitaTexto],
-              ['Periodicidad', cita.periodicidad],
-              ['Operario', mantenimiento.operarioNombre],
+              ['Referencia', maquina.nombreReferencia],
+              if (maquina.tipoPuerta.isNotEmpty)
+                ['Tipo de puerta', maquina.tipoPuerta],
+              if (maquina.fabricante.isNotEmpty)
+                ['Fabricante', maquina.fabricante],
+              if (maquina.modelo.isNotEmpty) ['Modelo', maquina.modelo],
+              if (maquina.serie.isNotEmpty)
+                ['Nº de serie', maquina.serie],
             ]),
-            pw.SizedBox(height: 14),
-
-            // ── Trabajo realizado ─────────────────────────────────────────────
-            _construirTituloSeccion('TRABAJO REALIZADO'),
-            pw.SizedBox(height: 6),
-            _construirBloqueTexto(mantenimiento.detallesTrabajo),
-            pw.SizedBox(height: 14),
-
-            // ── Observaciones ─────────────────────────────────────────────────
-            _construirTituloSeccion('OBSERVACIONES / ANOMALÍAS DETECTADAS'),
-            pw.SizedBox(height: 6),
-            _construirBloqueTexto(
-              mantenimiento.observaciones.isEmpty
-                  ? 'Sin observaciones.'
-                  : mantenimiento.observaciones,
-            ),
-
-            pw.Spacer(),
-
-            // ── Firmas ────────────────────────────────────────────────────────
-            pw.Divider(color: _colorCabecera, thickness: 0.5),
-            pw.SizedBox(height: 8),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
-              children: [
-                _construirBloqueFirma(
-                  'Firma del Técnico',
-                  mantenimiento.operarioNombre,
-                  imagenFirmaTecnico,
-                ),
-                _construirBloqueFirma(
-                  'Firma del Cliente / Responsable',
-                  nombreCliente,
-                  imagenFirmaCliente,
-                ),
-              ],
-            ),
           ],
-        ),
+
+          pw.SizedBox(height: 14),
+
+          // ── Resultado global de la instalación ───────────────────────────
+          _construirResultadoInstalacion(mantenimiento.estadoInstalacion),
+          pw.SizedBox(height: 14),
+
+          // ── Trabajo realizado ────────────────────────────────────────────
+          _construirTituloSeccion('TRABAJO REALIZADO'),
+          pw.SizedBox(height: 6),
+          _construirBloqueTexto(mantenimiento.detallesTrabajo.isNotEmpty
+              ? mantenimiento.detallesTrabajo
+              : '—'),
+          pw.SizedBox(height: 14),
+
+          // ── Observaciones / Acciones correctivas ─────────────────────────
+          _construirTituloSeccion('OBSERVACIONES / ACCIONES CORRECTIVAS'),
+          pw.SizedBox(height: 6),
+          _construirBloqueTexto(mantenimiento.observaciones.isNotEmpty
+              ? mantenimiento.observaciones
+              : 'Sin observaciones.'),
+
+          // ── Checklist de inspección ──────────────────────────────────────
+          if (checklist.isNotEmpty) ...[
+            pw.SizedBox(height: 14),
+            _construirTituloSeccion('INSPECCIÓN TÉCNICA'),
+            pw.SizedBox(height: 6),
+            ...checklist.entries.map((cat) => _construirSeccionChecklist(
+                  cat.key,
+                  cat.value,
+                )),
+          ],
+
+          pw.SizedBox(height: 14),
+
+          // ── Firmas ───────────────────────────────────────────────────────
+          pw.Divider(color: _colorCabecera, thickness: 0.5),
+          pw.SizedBox(height: 8),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
+            children: [
+              _construirBloqueFirma(
+                'Firma del Técnico',
+                mantenimiento.operarioNombre,
+                imagenFirmaTecnico,
+              ),
+              _construirBloqueFirma(
+                'Firma del Cliente / Responsable',
+                nombreCliente,
+                imagenFirmaCliente,
+              ),
+            ],
+          ),
+        ],
       ),
     );
 
     final bytes = await doc.save();
-    debugPrint('[GeneradorPDF] ✓ PDF generado (${bytes.length} bytes). Compartiendo...');
+    debugPrint(
+        '[GeneradorPDF] ✓ PDF generado (${bytes.length} bytes). Compartiendo...');
 
     final nombreArchivo =
         'parte_mant_${mantenimiento.id}_'
@@ -134,7 +185,8 @@ class GeneradorPDF {
   static pw.Widget _construirCabecera(String fechaTexto) {
     return pw.Container(
       width: double.infinity,
-      padding: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      padding:
+          const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: const pw.BoxDecoration(color: _colorCabecera),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -166,7 +218,8 @@ class GeneradorPDF {
   static pw.Widget _construirTituloSeccion(String titulo) {
     return pw.Container(
       width: double.infinity,
-      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding:
+          const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: const pw.BoxDecoration(color: _colorSubcabecera),
       child: pw.Text(
         titulo,
@@ -176,6 +229,78 @@ class GeneradorPDF {
           color: PdfColors.white,
           letterSpacing: 0.8,
         ),
+      ),
+    );
+  }
+
+  /// Muestra el resultado de la inspección con un color indicativo.
+  static pw.Widget _construirResultadoInstalacion(String estado) {
+    final PdfColor colorFondo;
+    final PdfColor colorTexto;
+    final String icono;
+
+    switch (estado) {
+      case 'Favorable':
+        colorFondo = _colorVerde;
+        colorTexto = PdfColors.white;
+        icono = '✓';
+      case 'Favorable con observaciones':
+        colorFondo = _colorNaranja;
+        colorTexto = PdfColors.white;
+        icono = '⚠';
+      case 'Desfavorable':
+        colorFondo = _colorRojo;
+        colorTexto = PdfColors.white;
+        icono = '✗';
+      default:
+        colorFondo = PdfColors.grey300;
+        colorTexto = _colorTextoSec;
+        icono = '–';
+    }
+
+    return pw.Container(
+      width: double.infinity,
+      padding:
+          const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: pw.BoxDecoration(
+        color: colorFondo,
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+      ),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          pw.Text(
+            icono,
+            style: pw.TextStyle(
+              font: pw.Font.helveticaBold(),
+              fontSize: 16,
+              color: colorTexto,
+            ),
+          ),
+          pw.SizedBox(width: 10),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                'RESULTADO DE LA INSPECCIÓN',
+                style: pw.TextStyle(
+                  font: pw.Font.helvetica(),
+                  fontSize: 8,
+                  color: colorTexto,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              pw.Text(
+                estado.isNotEmpty ? estado.toUpperCase() : '—',
+                style: pw.TextStyle(
+                  font: pw.Font.helveticaBold(),
+                  fontSize: 14,
+                  color: colorTexto,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -224,8 +349,10 @@ class GeneradorPDF {
       width: double.infinity,
       padding: const pw.EdgeInsets.all(10),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.blueGrey200, width: 0.5),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+        border:
+            pw.Border.all(color: PdfColors.blueGrey200, width: 0.5),
+        borderRadius:
+            const pw.BorderRadius.all(pw.Radius.circular(4)),
         color: PdfColors.white,
       ),
       child: pw.Text(
@@ -239,6 +366,85 @@ class GeneradorPDF {
     );
   }
 
+  /// Tabla de checklist para una categoría completa.
+  static pw.Widget _construirSeccionChecklist(
+    String categoria,
+    Map<String, String> items,
+  ) {
+    final filas = items.entries.toList();
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        // Cabecera de categoría
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          color: _colorFondoFila,
+          child: pw.Text(
+            categoria.toUpperCase(),
+            style: pw.TextStyle(
+              font: pw.Font.helveticaBold(),
+              fontSize: 8,
+              color: _colorSubcabecera,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        // Filas de ítems
+        pw.Table(
+          columnWidths: {
+            0: const pw.FlexColumnWidth(4),
+            1: const pw.FlexColumnWidth(1.5),
+          },
+          border: pw.TableBorder(
+            horizontalInside: pw.BorderSide(
+                color: PdfColors.blueGrey100, width: 0.3),
+          ),
+          children: filas.asMap().entries.map((entrada) {
+            final item = entrada.value.key;
+            final valor = entrada.value.value;
+            final PdfColor colorValor;
+            switch (valor) {
+              case 'Favorable':
+                colorValor = _colorVerde;
+              case 'Desfavorable':
+                colorValor = _colorRojo;
+              default:
+                colorValor = _colorTextoSec;
+            }
+            final fondo =
+                entrada.key.isEven ? PdfColors.white : _colorFondoFila;
+            return pw.TableRow(
+              decoration: pw.BoxDecoration(color: fondo),
+              children: [
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  child: pw.Text(item,
+                      style: pw.TextStyle(
+                          font: pw.Font.helvetica(),
+                          fontSize: 8,
+                          color: _colorTextoSec)),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  child: pw.Text(valor,
+                      style: pw.TextStyle(
+                          font: pw.Font.helveticaBold(),
+                          fontSize: 8,
+                          color: colorValor)),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+        pw.SizedBox(height: 8),
+      ],
+    );
+  }
+
   static pw.Widget _construirBloqueFirma(
     String titulo,
     String nombreFirmante,
@@ -247,7 +453,6 @@ class GeneradorPDF {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        // Recuadro de la firma
         pw.Container(
           width: 200,
           height: 70,
@@ -271,8 +476,8 @@ class GeneradorPDF {
         pw.SizedBox(height: 4),
         pw.Text(
           titulo,
-          style: pw.TextStyle(
-              font: pw.Font.helveticaBold(), fontSize: 8),
+          style:
+              pw.TextStyle(font: pw.Font.helveticaBold(), fontSize: 8),
           textAlign: pw.TextAlign.center,
         ),
         pw.Text(

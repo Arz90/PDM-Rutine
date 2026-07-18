@@ -1,3 +1,6 @@
+// Centinela para distinguir "no pasado" de "null explícito" en copyWith.
+const Object _sentinel = Object();
+
 /// Modelo que representa una cita / aviso de mantenimiento.
 ///
 /// [fechaHora] se almacena como String ISO 8601 en SQLite y se
@@ -27,6 +30,9 @@ class Appointment {
   /// Si es true, la cita es un servicio de guardia / fuera de horario habitual.
   final bool esGuardia;
 
+  /// FK → machines.id (opcional). Vincula la cita a una instalación concreta.
+  final int? maquinaId;
+
   const Appointment({
     this.id,
     required this.clienteId,
@@ -36,6 +42,7 @@ class Appointment {
     required this.estado,
     this.recurrenciaActiva = true,
     this.esGuardia = false,
+    this.maquinaId,
   });
 
   // ── SQLite ──────────────────────────────────────────────────────────────────
@@ -52,6 +59,7 @@ class Appointment {
       'estado': estado,
       'recurrencia_activa': recurrenciaActiva ? 1 : 0,
       'es_guardia': esGuardia ? 1 : 0,
+      if (maquinaId != null) 'maquina_id': maquinaId,
     };
   }
 
@@ -68,6 +76,7 @@ class Appointment {
       // El ?? maneja registros anteriores a la migración v2 (SQLite devuelve null)
       recurrenciaActiva: (map['recurrencia_activa'] as int? ?? 1) == 1,
       esGuardia: (map['es_guardia'] as int? ?? 0) == 1,
+      maquinaId: map['maquina_id'] as int?,
     );
   }
 
@@ -101,6 +110,7 @@ class Appointment {
     String? estado,
     bool? recurrenciaActiva,
     bool? esGuardia,
+    Object? maquinaId = _sentinel,
   }) {
     return Appointment(
       id: id ?? this.id,
@@ -111,6 +121,7 @@ class Appointment {
       estado: estado ?? this.estado,
       recurrenciaActiva: recurrenciaActiva ?? this.recurrenciaActiva,
       esGuardia: esGuardia ?? this.esGuardia,
+      maquinaId: identical(maquinaId, _sentinel) ? this.maquinaId : maquinaId as int?,
     );
   }
 
