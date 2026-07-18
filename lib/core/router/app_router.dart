@@ -8,6 +8,7 @@ import '../../features/clients/models/client.dart';
 import '../../features/clients/screens/pantalla_clientes.dart';
 import '../../features/clients/screens/pantalla_formulario_cliente.dart';
 import '../../features/maintenance/screens/maintenance_list_screen.dart';
+import '../../features/maintenance/screens/pantalla_formulario_mantenimiento.dart';
 import '../../features/shell/shell_screen.dart';
 import '../../features/templates/screens/templates_list_screen.dart';
 
@@ -19,8 +20,9 @@ const String rutaMantenimiento = '/mantenimiento';
 const String rutaPlantillas    = '/plantillas';
 
 // Rutas de pantalla completa (sin NavigationBar)
-const String rutaFormularioCliente = '/formulario-cliente';
-const String rutaFormularioCita    = '/formulario-cita';
+const String rutaFormularioCliente        = '/formulario-cliente';
+const String rutaFormularioCita           = '/formulario-cita';
+const String rutaFormularioMantenimiento  = '/formulario-mantenimiento';
 
 /// Provider que expone el [GoRouter] configurado.
 ///
@@ -75,6 +77,13 @@ final enrutadorAppProvider = Provider<GoRouter>((ref) {
           // Si es null, el formulario abre en modo creación.
           final citaExistente = estado.extra as Appointment?;
           return PantallaFormularioCita(citaExistente: citaExistente);
+        },
+      ),
+      GoRoute(
+        path: '$rutaFormularioMantenimiento/:citaId',
+        builder: (context, estado) {
+          final citaId = int.parse(estado.pathParameters['citaId']!);
+          return PantallaFormularioMantenimiento(citaId: citaId);
         },
       ),
     ],

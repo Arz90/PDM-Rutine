@@ -427,6 +427,23 @@ class _EstadoHojaDetalleCita extends ConsumerState<_HojaDetalleCita> {
               onChanged: _guardando ? null : _cambiarRecurrencia,
             ),
           ],
+
+          // ── Botón: Iniciar Mantenimiento ──────────────────────────────
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () {
+                final citaId = widget.cita.id;
+                Navigator.of(context).pop();
+                context.push('$rutaFormularioMantenimiento/$citaId');
+              },
+              icon: const Icon(Icons.build_outlined),
+              label: const Text('Iniciar Mantenimiento'),
+            ),
+          ),
         ],
       ),
     );

@@ -27,7 +27,7 @@ class DatabaseHelper {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: _onOpen,
@@ -44,6 +44,22 @@ class DatabaseHelper {
       await db.execute(
         'ALTER TABLE appointments ADD COLUMN es_guardia INTEGER NOT NULL DEFAULT 0',
       );
+    }
+    // v2 → v3: crear tabla mantenimientos
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS mantenimientos (
+          id               INTEGER PRIMARY KEY AUTOINCREMENT,
+          cita_id          INTEGER NOT NULL,
+          operario_nombre  TEXT    NOT NULL,
+          detalles_trabajo TEXT    NOT NULL,
+          observaciones    TEXT    NOT NULL DEFAULT '',
+          firma_tecnico    TEXT,
+          firma_cliente    TEXT,
+          fecha_creacion   TEXT    NOT NULL,
+          FOREIGN KEY (cita_id) REFERENCES appointments (id) ON DELETE CASCADE
+        )
+      ''');
     }
   }
 
@@ -127,6 +143,24 @@ class DatabaseHelper {
         datos_template  TEXT    NOT NULL DEFAULT '{}',
         observaciones   TEXT,
         created_at      TEXT    NOT NULL
+      )
+    ''');
+
+    // ── Partes de Mantenimiento ────────────────────────────────────────────────
+    // Resultado de ejecutar una cita. Almacena el trabajo realizado,
+    // las observaciones y las firmas digitalizadas del técnico y el cliente.
+    // firma_tecnico / firma_cliente: imágenes PNG codificadas en Base64.
+    await db.execute('''
+      CREATE TABLE mantenimientos (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        cita_id          INTEGER NOT NULL,
+        operario_nombre  TEXT    NOT NULL,
+        detalles_trabajo TEXT    NOT NULL,
+        observaciones    TEXT    NOT NULL DEFAULT '',
+        firma_tecnico    TEXT,
+        firma_cliente    TEXT,
+        fecha_creacion   TEXT    NOT NULL,
+        FOREIGN KEY (cita_id) REFERENCES appointments (id) ON DELETE CASCADE
       )
     ''');
 
