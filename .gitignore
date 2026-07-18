@@ -34,11 +34,15 @@ migrate_working_dir/
 /build/
 /coverage/
 
-# Android local config (rutas del SDK, keystore privado)
+# Android local config y artefactos de compilación
 /android/local.properties
 /android/key.properties
+/android/build/
 *.jks
 *.keystore
+
+# Claude Code configuración local (no relevante para el proyecto)
+.claude/
 
 # Symbolication related
 app.*.symbols
