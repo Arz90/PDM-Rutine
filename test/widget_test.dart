@@ -1,30 +1,23 @@
-// This is a basic Flutter widget test.
+// Smoke test básico para PDM Rutine.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// Verifica únicamente que el árbol de widgets raíz se construye sin errores.
+// PDMRutineApp requiere ProviderScope (Riverpod) y MaterialApp.router
+// (go_router); este test garantiza que la integración entre ambos es correcta.
 
-import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pdm_rutine/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('smoke test: PDMRutineApp arranca dentro de ProviderScope',
+      (WidgetTester tester) async {
+    // Construye la app envuelta en ProviderScope y bombea un frame inicial.
+    await tester.pumpWidget(
+      const ProviderScope(child: PDMRutineApp()),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // El widget raíz de la aplicación está presente en el árbol.
+    expect(find.byType(PDMRutineApp), findsOneWidget);
   });
 }
