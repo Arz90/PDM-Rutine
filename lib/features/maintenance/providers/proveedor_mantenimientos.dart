@@ -76,8 +76,11 @@ final gestorMantenimientosProvider =
 
 /// Carga el historial completo de mantenimientos con datos de cita y cliente.
 /// Retorna los partes ordenados del más reciente al más antiguo.
+///
+/// autoDispose garantiza que cada vez que el Tab 2 se monta se ejecuta
+/// una query fresca, sin depender de invalidaciones externas.
 final historialMantenimientosProvider =
-    FutureProvider<List<EntradaHistorial>>((ref) async {
+    FutureProvider.autoDispose<List<EntradaHistorial>>((ref) async {
   final repositorio = ref.read(repositorioMantenimientosProvider);
   debugPrint('[historialMantenimientosProvider] Cargando historial...');
   final lista = await repositorio.obtenerHistorial();
