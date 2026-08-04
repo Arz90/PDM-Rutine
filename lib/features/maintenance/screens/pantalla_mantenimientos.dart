@@ -310,13 +310,9 @@ class _TarjetaMantenimientoState
                 IconButton(
                   icon: const Icon(Icons.edit_outlined),
                   tooltip: 'Editar parte',
-                  onPressed: () async {
-                    await context.push(
-                      '$rutaFormularioMantenimiento/${widget.entrada.cita.id}',
-                    );
-                    // Refrescar historial al volver del formulario
-                    ref.invalidate(historialMantenimientosProvider);
-                  },
+                  onPressed: () => context.push(
+                    '$rutaFormularioMantenimiento/${widget.entrada.cita.id}',
+                  ),
                 ),
                 // Ver / imprimir PDF
                 _generandoPdf

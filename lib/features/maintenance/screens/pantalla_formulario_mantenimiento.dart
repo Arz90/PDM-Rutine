@@ -358,6 +358,11 @@ class _EstadoFormularioMantenimiento
       );
 
       if (!mounted) return;
+
+      // Invalidar el historial ANTES de hacer pop, para que cuando la pantalla
+      // de historial vuelva a verse ya tenga los datos actualizados listos.
+      ref.invalidate(historialMantenimientosProvider);
+
       final mensajeExito = _mantenimientoExistente == null
           ? '✓ Parte guardado y PDF generado.'
           : '✓ Parte actualizado y PDF generado.';
