@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/database/database_helper.dart';
+import '../models/entrada_historial.dart';
 import '../models/mantenimiento.dart';
 
 /// Repositorio con las operaciones CRUD sobre la tabla [mantenimientos].
@@ -95,6 +96,55 @@ class RepositorioMantenimientos {
     } catch (e, traza) {
       debugPrint(
           '[RepositorioMantenimientos] ✗ ERROR en actualizarMantenimiento: $e\n$traza');
+      rethrow;
+    }
+  }
+
+  // ── HISTORIAL (JOIN) ────────────────────────────────────────────────────────
+
+  /// Devuelve todas las entradas del historial con datos de cita y cliente,
+  /// ordenadas del más reciente al más antiguo.
+  ///
+  /// Ejecuta un JOIN de 3 tablas para evitar queries N+1 en la lista.
+  Future<List<EntradaHistorial>> obtenerHistorial() async {
+    debugPrint('[RepositorioMantenimientos] obtenerHistorial → JOIN 3 tablas');
+    try {
+      final db = await _gestorBd.database;
+      final filas = await db.rawQuery('''
+        SELECT
+          m.id           AS m_id,
+          m.cita_id,
+          m.operario_nombre,
+          m.detalles_trabajo,
+          m.observaciones,
+          m.firma_tecnico,
+          m.firma_cliente,
+          m.fecha_creacion,
+          m.estado_instalacion,
+          m.checklist_json,
+          a.id           AS a_id,
+          a.cliente_id,
+          a.fecha_hora,
+          a.identificacion,
+          a.periodicidad,
+          a.estado       AS a_estado,
+          a.recurrencia_activa,
+          a.es_guardia,
+          a.maquina_id,
+          c.nombre       AS nombre_cliente,
+          c.ciudad_cp    AS ciudad_cliente
+        FROM mantenimientos m
+        JOIN appointments  a ON m.cita_id    = a.id
+        JOIN clients       c ON a.cliente_id = c.id
+        ORDER BY m.fecha_creacion DESC
+      ''');
+      final lista = filas.map(EntradaHistorial.fromJoinRow).toList();
+      debugPrint(
+          '[RepositorioMantenimientos] ✓ ${lista.length} entradas en historial.');
+      return lista;
+    } catch (e, traza) {
+      debugPrint(
+          '[RepositorioMantenimientos] ✗ ERROR en obtenerHistorial: $e\n$traza');
       rethrow;
     }
   }
