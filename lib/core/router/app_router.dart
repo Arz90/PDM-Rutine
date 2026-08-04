@@ -7,7 +7,7 @@ import '../../features/calendar/screens/pantalla_formulario_cita.dart';
 import '../../features/clients/models/client.dart';
 import '../../features/clients/screens/pantalla_clientes.dart';
 import '../../features/clients/screens/pantalla_formulario_cliente.dart';
-import '../../features/maintenance/screens/maintenance_list_screen.dart';
+import '../../features/maintenance/screens/pantalla_mantenimientos.dart';
 import '../../features/maintenance/screens/pantalla_formulario_mantenimiento.dart';
 import '../../features/shell/shell_screen.dart';
 import '../../features/templates/screens/templates_list_screen.dart';
@@ -50,7 +50,7 @@ final enrutadorAppProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: rutaMantenimiento,
-            builder: (context, estado) => const MaintenanceListScreen(),
+            builder: (context, estado) => const PantallaMantenimientos(),
           ),
           GoRoute(
             path: rutaPlantillas,

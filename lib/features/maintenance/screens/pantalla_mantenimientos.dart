@@ -222,10 +222,10 @@ class _TarjetaMantenimientoState
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: colorEstado.withOpacity(0.12),
+                            color: colorEstado.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: colorEstado.withOpacity(0.5),
+                              color: colorEstado.withValues(alpha: 0.5),
                               width: 0.8,
                             ),
                           ),
