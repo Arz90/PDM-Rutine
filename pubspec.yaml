@@ -33,6 +33,9 @@ dependencies:
   # ── Recuadro de firma táctil ─────────────────────────────────
   signature: ^5.5.0
 
+  # ── Compartir archivos (WhatsApp, Email, etc.) ──────────────────
+  share_plus: ^10.1.4
+
   # ── Envío de correo con adjunto ─────────────────────────────────
   flutter_email_sender: ^6.0.3
 

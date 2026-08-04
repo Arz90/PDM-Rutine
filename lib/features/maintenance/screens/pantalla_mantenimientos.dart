@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../machines/data/repositorio_maquinas.dart';
 import '../../machines/models/maquina.dart';
@@ -85,6 +89,7 @@ class _TarjetaMantenimiento extends ConsumerStatefulWidget {
 class _TarjetaMantenimientoState
     extends ConsumerState<_TarjetaMantenimiento> {
   bool _generandoPdf = false;
+  bool _compartiendoPdf = false;
 
   Color _colorEstado(String estado) {
     switch (estado) {
@@ -134,6 +139,52 @@ class _TarjetaMantenimientoState
       }
     } finally {
       if (mounted) setState(() => _generandoPdf = false);
+    }
+  }
+
+  Future<void> _compartirPdf() async {
+    debugPrint(
+        '[PantallaMantenimientos] _compartirPdf → '
+        'mantenimientoId=${widget.entrada.mantenimiento.id}');
+    setState(() => _compartiendoPdf = true);
+
+    try {
+      Maquina? maquina;
+      final maquinaId = widget.entrada.cita.maquinaId;
+      if (maquinaId != null) {
+        maquina = await RepositorioMaquinas().obtenerMaquina(maquinaId);
+      }
+
+      // Generar bytes del PDF sin abrir el diálogo de impresión
+      final resultado = await GeneradorPDF.generarBytes(
+        mantenimiento: widget.entrada.mantenimiento,
+        cita: widget.entrada.cita,
+        nombreCliente: widget.entrada.nombreCliente,
+        ciudadCliente: widget.entrada.ciudadCliente,
+        maquina: maquina,
+      );
+
+      // Guardar en directorio temporal para poder adjuntarlo
+      final dirTemporal = await getTemporaryDirectory();
+      final rutaArchivo = '${dirTemporal.path}/${resultado.nombreArchivo}';
+      await File(rutaArchivo).writeAsBytes(resultado.bytes);
+      debugPrint('[PantallaMantenimientos] ✓ PDF guardado en $rutaArchivo');
+
+      // Abrir menú nativo de compartir (WhatsApp, Gmail, etc.)
+      await Share.shareXFiles(
+        [XFile(rutaArchivo)],
+        text: 'Adjunto informe técnico de mantenimiento.',
+      );
+      debugPrint('[PantallaMantenimientos] ✓ PDF compartido vía share_plus.');
+    } catch (e) {
+      debugPrint('[PantallaMantenimientos] ✗ Error al compartir PDF: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al compartir el PDF: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _compartiendoPdf = false);
     }
   }
 
@@ -249,20 +300,35 @@ class _TarjetaMantenimientoState
               ),
             ),
 
-            // Botón para regenerar y compartir el PDF
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: _generandoPdf
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.picture_as_pdf_outlined),
-                      tooltip: 'Ver / compartir PDF',
-                      onPressed: _generarPdf,
-                    ),
+            // Botones de acción: ver PDF y compartir
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Ver / imprimir PDF
+                _generandoPdf
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.picture_as_pdf_outlined),
+                        tooltip: 'Ver PDF',
+                        onPressed: _generarPdf,
+                      ),
+                // Compartir PDF (WhatsApp, Email, etc.)
+                _compartiendoPdf
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.share_outlined),
+                        tooltip: 'Compartir PDF',
+                        onPressed: _compartirPdf,
+                      ),
+              ],
             ),
           ],
         ),

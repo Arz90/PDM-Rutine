@@ -24,15 +24,18 @@ class GeneradorPDF {
   static const _colorNaranja = PdfColor.fromInt(0xFFE65100);
   static const _colorRojo = PdfColor.fromInt(0xFFC62828);
 
-  /// Genera el documento PDF y abre el menú de compartir de Android/iOS.
-  static Future<void> generarYCompartir({
+  /// Genera el documento PDF y devuelve los bytes junto al nombre de archivo.
+  ///
+  /// Método base usado tanto por [generarYCompartir] (visualización/impresión)
+  /// como por la función de compartir vía share_plus (WhatsApp, Email, etc.).
+  static Future<({Uint8List bytes, String nombreArchivo})> generarBytes({
     required Mantenimiento mantenimiento,
     required Appointment cita,
     required String nombreCliente,
     required String ciudadCliente,
     Maquina? maquina,
   }) async {
-    debugPrint('[GeneradorPDF] Iniciando generación del PDF...');
+    debugPrint('[GeneradorPDF] generarBytes → construyendo documento...');
 
     final formatoFechaHora = DateFormat('dd/MM/yyyy  HH:mm', 'es_ES');
     final fechaCitaTexto = formatoFechaHora.format(cita.fechaHora);
@@ -169,14 +172,33 @@ class GeneradorPDF {
     );
 
     final bytes = await doc.save();
-    debugPrint(
-        '[GeneradorPDF] ✓ PDF generado (${bytes.length} bytes). Compartiendo...');
-
     final nombreArchivo =
         'parte_mant_${mantenimiento.id}_'
         '${DateFormat('yyyyMMdd').format(mantenimiento.fechaCreacion)}.pdf';
 
-    await Printing.sharePdf(bytes: bytes, filename: nombreArchivo);
+    debugPrint(
+        '[GeneradorPDF] ✓ PDF generado (${bytes.length} bytes) → $nombreArchivo');
+    return (bytes: bytes, nombreArchivo: nombreArchivo);
+  }
+
+  /// Genera el documento PDF y abre el menú nativo de visualización/impresión.
+  static Future<void> generarYCompartir({
+    required Mantenimiento mantenimiento,
+    required Appointment cita,
+    required String nombreCliente,
+    required String ciudadCliente,
+    Maquina? maquina,
+  }) async {
+    debugPrint('[GeneradorPDF] generarYCompartir → iniciando...');
+    final resultado = await generarBytes(
+      mantenimiento: mantenimiento,
+      cita: cita,
+      nombreCliente: nombreCliente,
+      ciudadCliente: ciudadCliente,
+      maquina: maquina,
+    );
+    await Printing.sharePdf(
+        bytes: resultado.bytes, filename: resultado.nombreArchivo);
     debugPrint('[GeneradorPDF] ✓ PDF compartido correctamente.');
   }
 
