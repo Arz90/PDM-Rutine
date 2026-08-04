@@ -92,6 +92,7 @@ class _TarjetaMantenimientoState
     extends ConsumerState<_TarjetaMantenimiento> {
   bool _generandoPdf = false;
   bool _compartiendoPdf = false;
+  bool _eliminando = false;
 
   Color _colorEstado(String estado) {
     switch (estado) {
@@ -141,6 +142,56 @@ class _TarjetaMantenimientoState
       }
     } finally {
       if (mounted) setState(() => _generandoPdf = false);
+    }
+  }
+
+  Future<void> _confirmarEliminacion() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar parte'),
+        content: Text(
+          '¿Eliminar el parte de "${widget.entrada.cita.identificacion}"?\n\n'
+          'Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true) return;
+
+    setState(() => _eliminando = true);
+    debugPrint(
+        '[PantallaMantenimientos] Eliminando mantenimiento '
+        'id=${widget.entrada.mantenimiento.id}...');
+    try {
+      final repositorio =
+          ref.read(repositorioMantenimientosProvider);
+      await repositorio
+          .eliminarMantenimiento(widget.entrada.mantenimiento.id!);
+      debugPrint('[PantallaMantenimientos] ✓ Mantenimiento eliminado.');
+      if (mounted) ref.invalidate(historialMantenimientosProvider);
+    } catch (e) {
+      debugPrint(
+          '[PantallaMantenimientos] ✗ Error al eliminar: $e');
+      if (mounted) {
+        setState(() => _eliminando = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al eliminar: $e')),
+        );
+      }
     }
   }
 
@@ -302,7 +353,7 @@ class _TarjetaMantenimientoState
               ),
             ),
 
-            // Botones de acción: editar, ver PDF y compartir
+            // Botones de acción: editar, ver PDF, compartir y borrar
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -337,6 +388,21 @@ class _TarjetaMantenimientoState
                         icon: const Icon(Icons.share_outlined),
                         tooltip: 'Compartir PDF',
                         onPressed: _compartirPdf,
+                      ),
+                // Eliminar parte
+                _eliminando
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : IconButton(
+                        icon: Icon(
+                          Icons.delete_outline,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        tooltip: 'Eliminar parte',
+                        onPressed: _confirmarEliminacion,
                       ),
               ],
             ),
