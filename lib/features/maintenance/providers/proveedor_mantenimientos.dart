@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/repositorio_mantenimientos.dart';
+import '../models/entrada_historial.dart';
 import '../models/mantenimiento.dart';
 
 // ── Provider del repositorio ──────────────────────────────────────────────────
@@ -70,3 +71,17 @@ final gestorMantenimientosProvider =
   GestorMantenimientos.new,
   name: 'gestorMantenimientosProvider',
 );
+
+// ── Provider: historial completo (Tab 2) ─────────────────────────────────────
+
+/// Carga el historial completo de mantenimientos con datos de cita y cliente.
+/// Retorna los partes ordenados del más reciente al más antiguo.
+final historialMantenimientosProvider =
+    FutureProvider<List<EntradaHistorial>>((ref) async {
+  final repositorio = ref.read(repositorioMantenimientosProvider);
+  debugPrint('[historialMantenimientosProvider] Cargando historial...');
+  final lista = await repositorio.obtenerHistorial();
+  debugPrint(
+      '[historialMantenimientosProvider] ✓ ${lista.length} entradas cargadas.');
+  return lista;
+}, name: 'historialMantenimientosProvider');
