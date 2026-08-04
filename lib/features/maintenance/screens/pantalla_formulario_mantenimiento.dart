@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -100,6 +101,15 @@ class _EstadoFormularioMantenimiento
   late final SignatureController _ctrlFirmaTecnico;
   late final SignatureController _ctrlFirmaCliente;
 
+  // ── Modo edición ───────────────────────────────────────────────────────────
+  /// Mantenimiento existente cargado de la BD. Null si es modo creación.
+  Mantenimiento? _mantenimientoExistente;
+  /// Preview de firmas guardadas (bytes PNG decodificados de Base64).
+  Uint8List? _firmaTecnicoExistente;
+  Uint8List? _firmaClienteExistente;
+  /// Mientras se consulta la BD al iniciar, se muestra un indicador.
+  bool _cargandoExistente = true;
+
   // ── Stepper ────────────────────────────────────────────────────────────────
   int _pasoActual = 0;
   bool _guardando = false;
@@ -121,6 +131,85 @@ class _EstadoFormularioMantenimiento
     );
     debugPrint(
         '[FormularioMantenimiento] initState → citaId=${widget.citaId}');
+
+    // Verificar si ya existe un parte para esta cita (modo edición)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cargarMantenimientoExistente();
+    });
+  }
+
+  /// Consulta la BD para detectar si existe un parte para [citaId].
+  /// Si lo encuentra, puebla todos los controladores con los datos guardados.
+  Future<void> _cargarMantenimientoExistente() async {
+    debugPrint(
+        '[FormularioMantenimiento] _cargarMantenimientoExistente → citaId=${widget.citaId}');
+    final repositorio = ref.read(repositorioMantenimientosProvider);
+    try {
+      final lista =
+          await repositorio.obtenerMantenimientosPorCita(widget.citaId);
+
+      if (!mounted) return;
+
+      if (lista.isEmpty) {
+        debugPrint(
+            '[FormularioMantenimiento] ✓ Sin partes previos → modo creación.');
+        setState(() => _cargandoExistente = false);
+        return;
+      }
+
+      final existente = lista.first;
+      debugPrint(
+          '[FormularioMantenimiento] ✓ Parte existente id=${existente.id} → modo edición.');
+
+      // Poblar controladores de texto
+      _ctrlOperario.text = existente.operarioNombre;
+      _ctrlDetalles.text = existente.detallesTrabajo;
+      _ctrlObservaciones.text = existente.observaciones;
+
+      // Restaurar estado del checklist desde JSON
+      if (existente.checklistJson.isNotEmpty &&
+          existente.checklistJson != '{}') {
+        try {
+          final decoded = jsonDecode(existente.checklistJson)
+              as Map<String, dynamic>;
+          for (final entrada in decoded.entries) {
+            if (_checklist.containsKey(entrada.key)) {
+              final items =
+                  (entrada.value as Map<String, dynamic>).cast<String, String>();
+              _checklist[entrada.key]!.addAll(items);
+            }
+          }
+        } catch (e) {
+          debugPrint(
+              '[FormularioMantenimiento] ⚠ Error parseando checklist: $e');
+        }
+      }
+
+      // Decodificar firmas existentes para mostrar como preview
+      Uint8List? firmaTecnico;
+      Uint8List? firmaCliente;
+      if (existente.firmaTecnico?.isNotEmpty == true) {
+        firmaTecnico = base64Decode(existente.firmaTecnico!);
+      }
+      if (existente.firmaCliente?.isNotEmpty == true) {
+        firmaCliente = base64Decode(existente.firmaCliente!);
+      }
+
+      setState(() {
+        _mantenimientoExistente = existente;
+        _estadoInstalacion =
+            existente.estadoInstalacion.isNotEmpty
+                ? existente.estadoInstalacion
+                : kEstadosInstalacion.first;
+        _firmaTecnicoExistente = firmaTecnico;
+        _firmaClienteExistente = firmaCliente;
+        _cargandoExistente = false;
+      });
+    } catch (e, traza) {
+      debugPrint(
+          '[FormularioMantenimiento] ✗ Error cargando existente: $e\n$traza');
+      if (mounted) setState(() => _cargandoExistente = false);
+    }
   }
 
   @override
@@ -173,14 +262,17 @@ class _EstadoFormularioMantenimiento
     setState(() => _guardando = true);
     debugPrint('[FormularioMantenimiento] Iniciando guardado...');
 
-    // Exportar firmas a PNG → Base64 ANTES de cualquier await con contextos
+    // Exportar firmas a PNG → Base64 ANTES de cualquier await con contextos.
+    // Si el pad está vacío, se conserva la firma guardada (si la hay).
     final bytesFirmaTecnico = await _ctrlFirmaTecnico.toPngBytes();
     final bytesFirmaCliente = await _ctrlFirmaCliente.toPngBytes();
 
-    final firmaTecnicoB64 =
-        bytesFirmaTecnico != null ? base64Encode(bytesFirmaTecnico) : null;
-    final firmaClienteB64 =
-        bytesFirmaCliente != null ? base64Encode(bytesFirmaCliente) : null;
+    final firmaTecnicoB64 = bytesFirmaTecnico != null
+        ? base64Encode(bytesFirmaTecnico)
+        : _mantenimientoExistente?.firmaTecnico;
+    final firmaClienteB64 = bytesFirmaCliente != null
+        ? base64Encode(bytesFirmaCliente)
+        : _mantenimientoExistente?.firmaCliente;
 
     // Capturar referencias síncronas al repositorio y providers
     final repositorio = ref.read(repositorioMantenimientosProvider);
@@ -214,30 +306,41 @@ class _EstadoFormularioMantenimiento
             .firstOrNull;
       }
 
-      // 4. Crear y persistir el parte de mantenimiento
-      final nuevoMantenimiento = Mantenimiento(
+      // 4. Construir el parte (con id si es edición, sin id si es creación)
+      final mantenimiento = Mantenimiento(
+        id: _mantenimientoExistente?.id,
         citaId: widget.citaId,
         operarioNombre: _ctrlOperario.text.trim(),
         detallesTrabajo: _ctrlDetalles.text.trim(),
         observaciones: _ctrlObservaciones.text.trim(),
         firmaTecnico: firmaTecnicoB64,
         firmaCliente: firmaClienteB64,
-        fechaCreacion: DateTime.now(),
+        fechaCreacion:
+            _mantenimientoExistente?.fechaCreacion ?? DateTime.now(),
         estadoInstalacion: _estadoInstalacion,
         checklistJson: jsonEncode(_checklist),
       );
 
-      final nuevoId =
-          await repositorio.insertarMantenimiento(nuevoMantenimiento);
-      final mantenimientoGuardado =
-          nuevoMantenimiento.copyWith(id: nuevoId);
-      debugPrint(
-          '[FormularioMantenimiento] ✓ Parte guardado con id=$nuevoId');
+      // 5. Upsert: INSERT si es nuevo, UPDATE si ya existe
+      final int idGuardado;
+      if (_mantenimientoExistente == null) {
+        idGuardado = await repositorio.insertarMantenimiento(mantenimiento);
+        debugPrint(
+            '[FormularioMantenimiento] ✓ Parte creado con id=$idGuardado');
+      } else {
+        await repositorio.actualizarMantenimiento(mantenimiento);
+        idGuardado = _mantenimientoExistente!.id!;
+        debugPrint(
+            '[FormularioMantenimiento] ✓ Parte actualizado id=$idGuardado');
+      }
+      final mantenimientoGuardado = mantenimiento.copyWith(id: idGuardado);
 
-      // 5. Marcar la cita como "Completada" automáticamente
-      await gestorCitas.modificarCita(cita.copyWith(estado: 'Completada'));
-      debugPrint(
-          '[FormularioMantenimiento] ✓ Cita ${widget.citaId} marcada como Completada.');
+      // 6. Marcar la cita como "Completada" solo en modo creación
+      if (_mantenimientoExistente == null) {
+        await gestorCitas.modificarCita(cita.copyWith(estado: 'Completada'));
+        debugPrint(
+            '[FormularioMantenimiento] ✓ Cita ${widget.citaId} marcada como Completada.');
+      }
 
       // 6. Guardar el nombre del operario para la próxima sesión
       if (!mounted) return;
@@ -255,9 +358,12 @@ class _EstadoFormularioMantenimiento
       );
 
       if (!mounted) return;
+      final mensajeExito = _mantenimientoExistente == null
+          ? '✓ Parte guardado y PDF generado.'
+          : '✓ Parte actualizado y PDF generado.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('✓ Parte guardado y PDF generado.'),
+          content: Text(mensajeExito),
           backgroundColor: Theme.of(context).colorScheme.primary,
           behavior: SnackBarBehavior.floating,
         ),
@@ -421,6 +527,7 @@ class _EstadoFormularioMantenimiento
         _RecuadroFirma(
           etiqueta: 'Firma del Técnico',
           controlador: _ctrlFirmaTecnico,
+          firmaExistente: _firmaTecnicoExistente,
         ),
         const SizedBox(height: 16),
 
@@ -428,6 +535,7 @@ class _EstadoFormularioMantenimiento
         _RecuadroFirma(
           etiqueta: 'Firma del Cliente / Responsable',
           controlador: _ctrlFirmaCliente,
+          firmaExistente: _firmaClienteExistente,
         ),
         const SizedBox(height: 24),
 
@@ -480,8 +588,18 @@ class _EstadoFormularioMantenimiento
           .firstOrNull;
     }
 
+    if (_cargandoExistente) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final tituloAppBar = _mantenimientoExistente != null
+        ? 'Editar Parte'
+        : 'Parte de Mantenimiento';
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Parte de Mantenimiento')),
+      appBar: AppBar(title: Text(tituloAppBar)),
       body: Column(
         children: [
           // Tarjeta de contexto de la cita
@@ -698,13 +816,20 @@ class _FilaChecklistItem extends StatelessWidget {
 }
 
 /// Recuadro de firma digital con lienzo blanco y botón de borrado.
+///
+/// En modo edición, si [firmaExistente] tiene datos, muestra la firma
+/// guardada como preview. El lienzo permite dibujar una nueva firma;
+/// si se deja vacío al guardar, se conserva la firma existente.
 class _RecuadroFirma extends StatelessWidget {
   final String etiqueta;
   final SignatureController controlador;
+  /// Bytes PNG de la firma guardada. Null si es modo creación o sin firma.
+  final Uint8List? firmaExistente;
 
   const _RecuadroFirma({
     required this.etiqueta,
     required this.controlador,
+    this.firmaExistente,
   });
 
   @override
@@ -718,6 +843,47 @@ class _RecuadroFirma extends StatelessWidget {
             style: const TextStyle(
                 fontSize: 13, fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
+
+        // Preview de firma guardada (solo en modo edición)
+        if (firmaExistente != null) ...[
+          Row(
+            children: [
+              Icon(Icons.check_circle_outline,
+                  size: 14, color: esquema.primary),
+              const SizedBox(width: 4),
+              Text(
+                'Firma guardada (dejar lienzo vacío para conservarla)',
+                style: TextStyle(
+                    fontSize: 11, color: esquema.outline),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              height: 70,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(
+                    color: esquema.primary.withAlpha(100), width: 1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Image.memory(
+                firmaExistente!,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Nueva firma (opcional):',
+            style: TextStyle(fontSize: 11, color: esquema.outline),
+          ),
+          const SizedBox(height: 4),
+        ],
+
+        // Lienzo de firma (siempre visible)
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: Container(

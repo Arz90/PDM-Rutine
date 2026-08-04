@@ -2,10 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/router/app_router.dart';
 import '../../machines/data/repositorio_maquinas.dart';
 import '../../machines/models/maquina.dart';
 import '../models/entrada_historial.dart';
@@ -300,10 +302,22 @@ class _TarjetaMantenimientoState
               ),
             ),
 
-            // Botones de acción: ver PDF y compartir
+            // Botones de acción: editar, ver PDF y compartir
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Editar parte
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: 'Editar parte',
+                  onPressed: () async {
+                    await context.push(
+                      '$rutaFormularioMantenimiento/${widget.entrada.cita.id}',
+                    );
+                    // Refrescar historial al volver del formulario
+                    ref.invalidate(historialMantenimientosProvider);
+                  },
+                ),
                 // Ver / imprimir PDF
                 _generandoPdf
                     ? const SizedBox(
